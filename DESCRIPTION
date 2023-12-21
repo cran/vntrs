@@ -1,7 +1,6 @@
 Package: vntrs
 Title: Variable Neighborhood Trust Region Search
-Version: 0.1.0
-Date: 2021-10-09
+Version: 0.1.1
 Authors@R: 
     person(given = "Lennart",
            family = "Oelschl\U00E4ger",
@@ -14,13 +13,14 @@ Description: An implementation of the variable neighborhood trust region
 Imports: trust
 License: GPL-3
 Encoding: UTF-8
-RoxygenNote: 7.1.2
+RoxygenNote: 7.2.3
 Suggests: testthat (>= 3.0.0)
 Config/testthat/edition: 3
+URL: https://loelschlaeger.de/vntrs/
 NeedsCompilation: no
-Packaged: 2021-10-15 08:04:52 UTC; Lennart
+Packaged: 2023-12-21 10:55:45 UTC; loelschlaeger
 Author: Lennart Oelschläger [aut, cre]
     (<https://orcid.org/0000-0001-5421-9313>)
 Maintainer: Lennart Oelschläger <lennart.oelschlaeger@uni-bielefeld.de>
 Repository: CRAN
-Date/Publication: 2021-10-18 14:30:02 UTC
+Date/Publication: 2023-12-21 11:10:02 UTC
