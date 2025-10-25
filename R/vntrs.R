@@ -7,168 +7,231 @@
 #' Bierlaire et al. (2009) "A Heuristic for Nonlinear Global Optimization"
 #' \doi{10.1287/ijoc.1090.0343}.
 #'
-#' @inheritParams check_f
-#' @param minimize
-#' If \code{TRUE}, \code{f} gets minimized. If \code{FALSE}, maximized.
-#' @inheritParams check_controls
-#' @param quiet
-#' If \code{TRUE}, progress messages are suppressed.
-#' @param seed
-#' Set a seed for the sampling of the random starting points.
-#' @return
-#' A data frame. Each row contains information of an identified optimum. The
-#' first \code{npar} columns \code{"p1"},...,\code{"p<npar>"} store the argument
-#' values, the next column \code{"value"} has the optimal function values and
-#' the last column \code{"global"} contains \code{TRUE} for global optima and
-#' \code{FALSE} for local optima.
+#' @param f \[`function`\]\cr
+#' A function, returning either
 #'
-#' @examples
-#' rosenbrock <- function(x) {
-#'   stopifnot(is.numeric(x))
-#'   stopifnot(length(x) == 2)
-#'   f <- expression(100 * (x2 - x1^2)^2 + (1 - x1)^2)
-#'   g1 <- D(f, "x1")
-#'   g2 <- D(f, "x2")
-#'   h11 <- D(g1, "x1")
-#'   h12 <- D(g1, "x2")
-#'   h22 <- D(g2, "x2")
-#'   x1 <- x[1]
-#'   x2 <- x[2]
-#'   f <- eval(f)
-#'   g <- c(eval(g1), eval(g2))
-#'   h <- rbind(c(eval(h11), eval(h12)), c(eval(h12), eval(h22)))
-#'   list(value = f, gradient = g, hessian = h)
-#' }
-#' vntrs(f = rosenbrock, npar = 2, seed = 1, controls = list(neighborhoods = 1))
+#' - a \code{numeric} objective value or
+#' - a \code{list} with element \code{value} and optional \code{gradient} and
+#'   \code{hessian} components
+#'
+#' for a \code{numeric} parameter vector. Missing derivatives are approximated
+#' by finite differences.
+#'
+#' @param npar \[`integer(1)`\]\cr
+#' The number of parameters of \code{f}.
+#'
+#' @param minimize \[`logical(1)`\]\cr
+#' Minimize \code{f}?
+#'
+#' @param init_runs \[`integer(1)`\]\cr
+#' Number of random starting points for the initialization stage.
+#'
+#' @param init_min,init_max \[`numeric(1)`\]\cr
+#' Lower and upper bound for the uniform sampling range during initialization.
+#'
+#' @param init_iterlim \[`integer(1)`\]\cr
+#' Maximum iterations of the trust-region method during initialization.
+#'
+#' @param neighborhoods \[`integer(1)`\]\cr
+#' Number of neighborhood expansions to perform.
+#'
+#' @param neighbors \[`integer(1)`\]\cr
+#' Number of neighboring points drawn in each neighborhood.
+#'
+#' @param beta \[`numeric(1)`\]\cr
+#' Non-negative scaling factor that controls the neighborhood expansion.
+#'
+#' @param iterlim \[`integer(1)`\]\cr
+#' Maximum iterations of the trust-region method during the main search.
+#'
+#' @param tolerance \[`numeric(1)`\]\cr
+#' Minimum distance between optima candidates to consider them distinct.
+#'
+#' @param inferior_tolerance \[`numeric(1)`\]\cr
+#' Maximum allowed difference from the best known objective value when deciding
+#' if a local optimum should be discarded early.
+#'
+#' @param time_limit \[`integer(1)` | `NULL`\]\cr
+#' Optional time limit (in seconds) for the search. If reached, the search stops
+#' early with a warning.
+#'
+#' @param cores \[`integer(1)`\]\cr
+#' Number of CPU cores used for parallel evaluation.
+#'
+#' @param lower,upper \[`numeric(npar)`  | `NULL`\]\cr
+#' Optional lower and upper parameter bounds.
+#'
+#' @param collect_all \[`logical(1)`\]\cr
+#' Keep every converged local optimum even if it is inferior to the best known
+#' solution and disable early stopping?
+#'
+#' @param quiet \[`logical(1)`\]\cr
+#' Suppress messages?
+#'
+#' @return
+#' A \code{data.frame} summarizing the identified optima or \code{NULL} if none
+#' could be determined.
 #'
 #' @export
+#'
+#' @examples
+#' rosenbrock <- function(x) 100 * (x[2] - x[1]^2)^2 + (1 - x[1])^2
+#' vntrs(f = rosenbrock, npar = 2)
 
-vntrs <- function(f, npar, minimize = TRUE, controls = NULL, quiet = TRUE,
-                  seed = NULL) {
-  ### check inputs
-  if (!is.logical(minimize)) {
-    stop("'minimize' must be a boolean.",
-      call. = FALSE
-    )
-  }
-  if (!is.logical(quiet)) {
-    stop("'quiet' must be a boolean.",
-      call. = FALSE
-    )
-  }
-  if (quiet) {
-    sink(tempfile())
-    on.exit(sink())
-  }
-  if (!is.null(seed)) {
-    set.seed(seed)
-  }
-  cat("Check controls.\n")
-  controls <- check_controls(controls = controls)
-  if (!is.null(controls$time_limit)) {
-    start_time <- Sys.time()
-  }
-  cat("Check function.\n")
-  check_f(f = f, npar = npar, controls = controls)
-
-  ### initialization of variable neighborhood search
-  cat("Initialize VNTRS.\n")
-  initialization <- initialize(
-    f = f, npar = npar, minimize = minimize,
-    controls = controls
+vntrs <- function(
+    f,
+    npar,
+    minimize = TRUE,
+    init_runs = 5L,
+    init_min = -1,
+    init_max = 1,
+    init_iterlim = 20L,
+    neighborhoods = 5L,
+    neighbors = 5L,
+    beta = 0.05,
+    iterlim = 100L,
+    tolerance = 1e-6,
+    inferior_tolerance = 1e-6,
+    time_limit = NULL,
+    cores = 1L,
+    lower = NULL,
+    upper = NULL,
+    collect_all = FALSE,
+    quiet = TRUE
+  ) {
+  oeli::input_check_response(
+    check = checkmate::check_function(f),
+    var_name = "f"
   )
-  L <- initialization$L
-  x_best <- initialization$x_best
-
-  ### iterative variable neighborhood search
-  cat("Start VNTRS.\n")
-  k <- 1
-  stop <- FALSE
-  while (k <= controls$neighborhoods) {
-    if (stop) break
-
-    ### select neighbors
-    cat(paste0("* Select neighborhood ", k, ".\n"))
-    z <- select_neighbors(
-      f = f, x = x_best, neighborhood_expansion = 1.5^(k - 1),
-      controls = controls
+  oeli::input_check_response(
+    check = checkmate::check_count(npar, positive = TRUE),
+    var_name = "npar"
+  )
+  npar <- as.integer(npar)
+  oeli::input_check_response(
+    check = checkmate::check_flag(minimize),
+    var_name = "minimize"
+  )
+  minimize <- isTRUE(minimize)
+  oeli::input_check_response(
+    check = checkmate::check_count(init_runs, positive = TRUE),
+    var_name = "init_runs"
+  )
+  init_runs <- as.integer(init_runs)
+  oeli::input_check_response(
+    check = checkmate::check_number(init_min, finite = TRUE),
+    var_name = "init_min"
+  )
+  oeli::input_check_response(
+    check = checkmate::check_number(init_max, lower = init_min, finite = TRUE),
+    var_name = "init_max"
+  )
+  oeli::input_check_response(
+    check = checkmate::check_count(init_iterlim, positive = TRUE),
+    var_name = "init_iterlim"
+  )
+  init_iterlim <- as.integer(init_iterlim)
+  oeli::input_check_response(
+    check = checkmate::check_count(neighborhoods, positive = TRUE),
+    var_name = "neighborhoods"
+  )
+  neighborhoods <- as.integer(neighborhoods)
+  oeli::input_check_response(
+    check = checkmate::check_count(neighbors, positive = TRUE),
+    var_name = "neighbors"
+  )
+  neighbors <- as.integer(neighbors)
+  oeli::input_check_response(
+    check = checkmate::check_number(beta, finite = TRUE, lower = 0),
+    var_name = "beta"
+  )
+  oeli::input_check_response(
+    check = checkmate::check_count(iterlim, positive = TRUE),
+    var_name = "iterlim"
+  )
+  iterlim <- as.integer(iterlim)
+  oeli::input_check_response(
+    check = checkmate::check_number(tolerance, finite = TRUE, lower = 0),
+    var_name = "tolerance"
+  )
+  oeli::input_check_response(
+    check = checkmate::check_number(
+      inferior_tolerance, finite = TRUE, lower = 0
+    ),
+    var_name = "inferior_tolerance"
+  )
+  has_time_limit <- !is.null(time_limit)
+  if (has_time_limit) {
+    oeli::input_check_response(
+      check = checkmate::check_number(time_limit, finite = TRUE, lower = 0),
+      var_name = "time_limit"
     )
-
-    ### perform local search around neighbors
-    for (j in seq_len(length(z))) {
-      ### check total time
-      if (!is.null(controls$time_limit)) {
-        if (difftime(Sys.time(), start_time, units = "secs") > controls$time_limit) {
-          stop <- TRUE
-          warning("Stopped early because 'controls$time_limit' reached.",
-            call. = FALSE, immediate. = TRUE, noBreaks. = TRUE
-          )
-          break
-        }
-      }
-
-      ### perform local search
-      cat("** Neighbor", j)
-      start <- Sys.time()
-      local_search <- local(
-        f = f,
-        parinit = z[[j]],
-        minimize = minimize,
-        controls = controls,
-        L = L
-      )
-      end <- Sys.time()
-
-      ### save local optimum (if unique one has been found)
-      t <- difftime(end, start, units = "auto")
-      cat(paste0(" [", sprintf("%.0f", t), " ", units(t), "]"))
-      if (local_search$success) {
-        cat(" [found optimum]")
-        if (unique_optimum(
-          L = L, argument = local_search$argument,
-          tolerance = controls$tolerance
-        )) {
-          cat(" [optimum is unknown]")
-          L <- c(L, list(local_search))
-        }
-      }
-      cat("\n")
-    }
-
-    ### if identified better optimum, reset neighborhoods
-    pos_x_best_new <- do.call(
-      what = ifelse(minimize, which.min, which.max),
-      args = list(unlist(lapply(L, function(x) x$value)))
+    time_limit <- as.numeric(time_limit)
+  } else {
+    time_limit <- 0
+  }
+  oeli::input_check_response(
+    check = checkmate::check_count(cores, positive = TRUE),
+    var_name = "cores"
+  )
+  cores <- as.integer(cores)
+  if (is.null(lower)) {
+    lower <- rep.int(-Inf, npar)
+  } else {
+    oeli::input_check_response(
+      check = oeli::check_numeric_vector(
+        lower, any.missing = FALSE, len = npar
+      ),
+      var_name = "lower"
     )
-    x_best_new <- L[[pos_x_best_new]]$argument
-    if (!isTRUE(all.equal(
-      target = x_best_new,
-      current = x_best,
-      tolerance = controls$tolerance
-    ))) {
-      cat("* Reset neighborhood, because better optimum was found.\n")
-      x_best <- x_best_new
-      k <- 1
-    } else {
-      k <- k + 1
-    }
   }
-
-  ### prepare output
-  if (length(L) == 0) {
-    warning("No optima found.", call. = FALSE)
-    return(NULL)
+  lower <- as.numeric(lower)
+  if (is.null(upper)) {
+    upper <- rep.int(Inf, npar)
+  } else {
+    oeli::input_check_response(
+      check = oeli::check_numeric_vector(
+        upper, any.missing = FALSE, len = npar
+      ),
+      var_name = "upper"
+    )
   }
-  arguments <- sapply(L, function(x) x$argument)
-  if (npar > 1) {
-    arguments <- t(arguments)
+  upper <- as.numeric(upper)
+  invalid_bounds <- is.finite(lower) & is.finite(upper) & lower > upper
+  if (any(invalid_bounds)) {
+    stop("Please ensure 'lower' <= 'upper'.", call. = FALSE)
   }
-  values <- sapply(L, function(x) x$value)
-  global <- values == ifelse(minimize, min, max)(values)
-  out <- data.frame(arguments, values, global)
-  colnames(out) <- c(paste0("p", 1:npar), "value", "global")
-
-  ### return output
-  cat("Done.\n")
-  return(out)
+  oeli::input_check_response(
+    check = checkmate::check_flag(collect_all),
+    var_name = "collect_all"
+  )
+  collect_all <- isTRUE(collect_all)
+  oeli::input_check_response(
+    check = checkmate::check_flag(quiet),
+    var_name = "quiet"
+  )
+  quiet <- isTRUE(quiet)
+  .Call(
+    `_vntrs_vntrs_cpp`,
+    f,
+    npar,
+    minimize,
+    init_runs,
+    init_min,
+    init_max,
+    init_iterlim,
+    neighborhoods,
+    neighbors,
+    beta,
+    iterlim,
+    tolerance,
+    inferior_tolerance,
+    has_time_limit,
+    time_limit,
+    cores,
+    lower,
+    upper,
+    quiet,
+    collect_all
+  )
 }

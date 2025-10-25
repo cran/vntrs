@@ -4,80 +4,101 @@
 \alias{vntrs}
 \title{Variable neighborhood trust region search}
 \usage{
-vntrs(f, npar, minimize = TRUE, controls = NULL, quiet = TRUE, seed = NULL)
+vntrs(
+  f,
+  npar,
+  minimize = TRUE,
+  init_runs = 5L,
+  init_min = -1,
+  init_max = 1,
+  init_iterlim = 20L,
+  neighborhoods = 5L,
+  neighbors = 5L,
+  beta = 0.05,
+  iterlim = 100L,
+  tolerance = 1e-06,
+  inferior_tolerance = 1e-06,
+  time_limit = NULL,
+  cores = 1L,
+  lower = NULL,
+  upper = NULL,
+  collect_all = FALSE,
+  quiet = TRUE
+)
 }
 \arguments{
-\item{f}{A function that computes value, gradient, and Hessian of the function to be
-optimized and returns them as a named list with elements \code{value},
-\code{gradient}, and \code{hessian}.}
-
-\item{npar}{The number of parameters of \code{f}.}
-
-\item{minimize}{If \code{TRUE}, \code{f} gets minimized. If \code{FALSE}, maximized.}
-
-\item{controls}{Either \code{NULL} or a named list with the following elements. Missing
-elements are set to the default values in parentheses.
+\item{f}{[\code{function}]\cr
+A function, returning either
 \itemize{
-\item \code{init_runs} (\code{5}):
-The number of initial searches.
-\item \code{init_min} (\code{-1}):
-The minimum argument value for the random initialization.
-\item \code{init_max} (\code{1}):
-The maximum argument value for the random initialization.
-\item \code{init_iterlim} (\code{20}):
-The number of iterations for the initial searches.
-\item \code{neighborhoods} (\code{5}):
-The number of nested neighborhoods.
-\item \code{neighbors} (\code{5}):
-The number of neighbors in each neighborhood.
-\item \code{beta} (\code{0.05}):
-A non-negative weight factor to account for the function's curvature in the
-selection of the neighbors. If \code{beta = 0}, the curvature is ignored.
-The higher the value, the higher the probability of selecting a neighbor in
-the direction of the highest function curvature.
-\item \code{iterlim} (\code{1000}):
-The maximum number of iterations to be performed before the local search is
-terminated.
-\item \code{tolerance} (\code{1e-6}):
-A positive scalar giving the tolerance for comparing different optimal
-arguments for equality.
-\item \code{time_limit} (\code{NULL}):
-The time limit in seconds for the algorithm.
-}}
+\item a \code{numeric} objective value or
+\item a \code{list} with element \code{value} and optional \code{gradient} and
+\code{hessian} components
+}
 
-\item{quiet}{If \code{TRUE}, progress messages are suppressed.}
+for a \code{numeric} parameter vector. Missing derivatives are approximated
+by finite differences.}
 
-\item{seed}{Set a seed for the sampling of the random starting points.}
+\item{npar}{[\code{integer(1)}]\cr
+The number of parameters of \code{f}.}
+
+\item{minimize}{[\code{logical(1)}]\cr
+Minimize \code{f}?}
+
+\item{init_runs}{[\code{integer(1)}]\cr
+Number of random starting points for the initialization stage.}
+
+\item{init_min, init_max}{[\code{numeric(1)}]\cr
+Lower and upper bound for the uniform sampling range during initialization.}
+
+\item{init_iterlim}{[\code{integer(1)}]\cr
+Maximum iterations of the trust-region method during initialization.}
+
+\item{neighborhoods}{[\code{integer(1)}]\cr
+Number of neighborhood expansions to perform.}
+
+\item{neighbors}{[\code{integer(1)}]\cr
+Number of neighboring points drawn in each neighborhood.}
+
+\item{beta}{[\code{numeric(1)}]\cr
+Non-negative scaling factor that controls the neighborhood expansion.}
+
+\item{iterlim}{[\code{integer(1)}]\cr
+Maximum iterations of the trust-region method during the main search.}
+
+\item{tolerance}{[\code{numeric(1)}]\cr
+Minimum distance between optima candidates to consider them distinct.}
+
+\item{inferior_tolerance}{[\code{numeric(1)}]\cr
+Maximum allowed difference from the best known objective value when deciding
+if a local optimum should be discarded early.}
+
+\item{time_limit}{[\code{integer(1)} | \code{NULL}]\cr
+Optional time limit (in seconds) for the search. If reached, the search stops
+early with a warning.}
+
+\item{cores}{[\code{integer(1)}]\cr
+Number of CPU cores used for parallel evaluation.}
+
+\item{lower, upper}{[\code{numeric(npar)}  | \code{NULL}]\cr
+Optional lower and upper parameter bounds.}
+
+\item{collect_all}{[\code{logical(1)}]\cr
+Keep every converged local optimum even if it is inferior to the best known
+solution and disable early stopping?}
+
+\item{quiet}{[\code{logical(1)}]\cr
+Suppress messages?}
 }
 \value{
-A data frame. Each row contains information of an identified optimum. The
-first \code{npar} columns \code{"p1"},...,\code{"p<npar>"} store the argument
-values, the next column \code{"value"} has the optimal function values and
-the last column \code{"global"} contains \code{TRUE} for global optima and
-\code{FALSE} for local optima.
+A \code{data.frame} summarizing the identified optima or \code{NULL} if none
+could be determined.
 }
 \description{
 This function performs variable neighborhood trust region search.
 }
 \examples{
-rosenbrock <- function(x) {
-  stopifnot(is.numeric(x))
-  stopifnot(length(x) == 2)
-  f <- expression(100 * (x2 - x1^2)^2 + (1 - x1)^2)
-  g1 <- D(f, "x1")
-  g2 <- D(f, "x2")
-  h11 <- D(g1, "x1")
-  h12 <- D(g1, "x2")
-  h22 <- D(g2, "x2")
-  x1 <- x[1]
-  x2 <- x[2]
-  f <- eval(f)
-  g <- c(eval(g1), eval(g2))
-  h <- rbind(c(eval(h11), eval(h12)), c(eval(h12), eval(h22)))
-  list(value = f, gradient = g, hessian = h)
-}
-vntrs(f = rosenbrock, npar = 2, seed = 1, controls = list(neighborhoods = 1))
-
+rosenbrock <- function(x) 100 * (x[2] - x[1]^2)^2 + (1 - x[1])^2
+vntrs(f = rosenbrock, npar = 2)
 }
 \references{
 Bierlaire et al. (2009) "A Heuristic for Nonlinear Global Optimization"
